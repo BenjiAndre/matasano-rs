@@ -1,5 +1,6 @@
 use itertools::Itertools;
 
+pub mod aes;
 pub mod base64;
 
 pub fn hex_to_u8(c: char) -> Option<u8> {
