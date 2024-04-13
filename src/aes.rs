@@ -1,34 +1,95 @@
+use openssl::rand::rand_bytes;
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::error::Error;
 
-fn aes(block: &[u8], key: &[u8], cipher: Cipher, mode: Mode) -> Result<Vec<u8>, Box<dyn Error>> {
-    if block.len() % 16 != 0 {
-        return Err("Block size must be a multiple of 16.".into());
+fn pkcs7(data: &[u8], block_size: usize) -> Vec<u8> {
+    if data.len() % 16 == 0 {
+        return data.to_vec();
     }
+    let padding_size = block_size - (data.len() % block_size);
+    let mut padded_data = Vec::from(data);
+    for _ in 0..padding_size {
+        padded_data.push(padding_size as u8);
+    }
+    padded_data
+}
 
-    let mut crypter = Crypter::new(cipher, mode, key, None)?;
+fn unpad(data: &[u8]) -> Vec<u8> {
+    let padding_size = *data.last().unwrap() as usize;
+    if padding_size > data.len() {
+        return data.to_vec();
+    }
+    let padding_start = data.len() - padding_size;
+    if data[padding_start..]
+        .iter()
+        .all(|&x| x as usize == padding_size)
+    {
+        data[..padding_start].to_vec()
+    } else {
+        data.to_vec()
+    }
+}
+
+pub fn ecb_decrypt(ciphertext: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+    let cipher = Cipher::aes_128_ecb();
+
+    let mut crypter = Crypter::new(cipher, Mode::Decrypt, key, None)?;
     crypter.pad(false);
 
-    let mut output = vec![0; block.len() + cipher.block_size()];
-    let count = crypter.update(block, &mut output)?;
+    let mut output = vec![0; ciphertext.len() + cipher.block_size()];
+    let count = crypter.update(ciphertext, &mut output)?;
+    output.truncate(count);
+    Ok(unpad(&output))
+}
+
+pub fn ecb_encrypt(plaintext: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+    let cipher = Cipher::aes_128_ecb();
+    let padded_data = &pkcs7(plaintext, cipher.block_size());
+
+    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, None)?;
+    crypter.pad(false);
+
+    let mut output = vec![0; padded_data.len() + cipher.block_size()];
+    let count = crypter.update(padded_data, &mut output)?;
     output.truncate(count);
     Ok(output)
 }
 
-pub fn ecb_decrypt(block: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-    aes(block, key, Cipher::aes_128_ecb(), Mode::Decrypt)
+pub fn cbc_decrypt(ciphertext: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+    let cipher = Cipher::aes_128_cbc();
+    let iv_size = cipher.block_size();
+
+    let (iv, ciphertext) = ciphertext.split_at(iv_size);
+
+    let mut crypter = Crypter::new(cipher, Mode::Decrypt, key, Some(iv))?;
+    crypter.pad(false);
+
+    let mut output = vec![0; ciphertext.len() + cipher.block_size()];
+    let count = crypter.update(ciphertext, &mut output)?;
+    let rest = crypter.finalize(&mut output[count..])?;
+    output.truncate(count + rest);
+    Ok(unpad(&output))
 }
 
-pub fn ecb_encrypt(block: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-    aes(block, key, Cipher::aes_128_ecb(), Mode::Encrypt)
-}
+pub fn cbc_encrypt(plaintext: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+    let cipher = Cipher::aes_128_cbc();
+    let mut iv = vec![0; cipher.block_size()];
+    rand_bytes(&mut iv)?;
 
-pub fn cbc_decrypt(block: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-    aes(block, key, Cipher::aes_128_cbc(), Mode::Decrypt)
-}
+    let padded_data = pkcs7(plaintext, cipher.block_size());
 
-pub fn cbc_encrypt(block: &[u8], key: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-    aes(block, key, Cipher::aes_128_cbc(), Mode::Encrypt)
+    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, Some(&iv))?;
+    crypter.pad(false);
+
+    let mut output = vec![0; padded_data.len() + cipher.block_size()];
+    let count = crypter.update(&padded_data, &mut output)?;
+    let rest = crypter.finalize(&mut output[count..])?;
+    output.truncate(count + rest);
+
+    let mut final_output = iv;
+    final_output.extend(output);
+
+    Ok(final_output)
 }
 
 #[cfg(test)]
@@ -56,15 +117,6 @@ mod tests {
         let decrypted = cbc_decrypt(&encrypted, key).expect("Decryption failed");
 
         assert_eq!(decrypted, data);
-    }
-
-    #[test]
-    fn test_invalid_block_size() {
-        let key = b"YELLOW SUBMARINE";
-        let data = b"Too short";
-
-        let result = ecb_encrypt(data, key);
-        assert!(result.is_err());
     }
 
     #[test]
