@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn test_aes_ecb_encrypt_decrypt() {
         let key = b"YELLOW SUBMARINE";
-        let data = b"Hello, world!   ";
+        let data = b"Hello, world!";
 
         let encrypted = ecb_encrypt(data, key).expect("Encryption failed");
         let decrypted = ecb_decrypt(&encrypted, key).expect("Decryption failed");
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn test_aes_cbc_encrypt_decrypt() {
         let key = b"YELLOW SUBMARINE";
-        let data = b"Hello, world!   ";
+        let data = b"Hello, world!";
 
         let encrypted = cbc_encrypt(data, key).expect("Encryption failed");
         let decrypted = cbc_decrypt(&encrypted, key).expect("Decryption failed");
