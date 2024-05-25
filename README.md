@@ -15,9 +15,6 @@ Welcome to my solutions for the Matasano Cryptography Challenges, implemented in
    - [Set 7](#set-7)
    - [Set 8](#set-8)
 3. [Usage](#usage)
-4. [How to Contribute](#how-to-contribute)
-5. [License](#license)
-6. [Contact](#contact)
 
 ## Introduction
 
